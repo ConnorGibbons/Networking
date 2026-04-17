@@ -16,6 +16,17 @@ final class NetworkingTests: XCTestCase {
         delay(by: 1)
     }
     
+    func testTCPServer() async throws {
+        let connectionName: Wrapped<String> = .init(value: "")
+        let (stream, continuation) = AsyncStream.makeStream(of: String.self)
+        let server = try TCPServer(port: 4242, maxConnections: 1, actionOnNewConnection: { connectionName.update(value: $0.connectionName) }, actionOnReceive: { _, data in
+            continuation.yield(String(data: data, encoding: .ascii)!)
+        })
+        for await received in stream {
+            print("Received: \(received) from: \(connectionName.getValue())")
+        }
+    }
+    
     
 }
 
@@ -27,3 +38,4 @@ func printRead(_ data: Data) {
 func delay(by: TimeInterval) {
     usleep(useconds_t(by * 1_000_000))
 }
+

@@ -16,9 +16,9 @@ public final class TCPConnection: @unchecked Sendable {
     
     public let connectionName: String
     
-    public init(onRead: @Sendable @escaping (Data) -> Void, host: String, port: Int, debug: Bool = false) async throws {
+    public init(onRead: @Sendable @escaping (Data) -> Void, onActive: @Sendable @escaping () -> Void = {}, onInactive: @Sendable @escaping () -> Void = {}, host: String, port: Int, debug: Bool = false) async throws {
         let bootstrap = ClientBootstrap(group: globalManager.group)
-        let handler = ConnectionInboundHandler(onRead: TCPConnection.generateCallback(onRead), onActive: {}, onInactive: {})
+        let handler = ConnectionInboundHandler(onRead: TCPConnection.generateCallback(onRead), onActive: onActive, onInactive: onInactive)
         
         self.connectionName = "\(host):\(port)"
         self.channel = try await bootstrap
@@ -30,6 +30,11 @@ public final class TCPConnection: @unchecked Sendable {
             }
             .connect(host: host, port: port)
             .get()
+    }
+    
+    init(channel: Channel, connectionName: String) {
+        self.channel = channel
+        self.connectionName = connectionName
     }
     
     /// Transforms the (Data) -> Void user provided callback to (ByteBuffer) -> Void for ChannelInboundHandler
@@ -56,6 +61,12 @@ public final class TCPConnection: @unchecked Sendable {
         }
     }
     
+    public func close() {
+        if(self.active) {
+            self.channel.close(promise: nil)
+        }
+    }
+    
     deinit {
         if(self.active) {
             self.channel.close(promise: nil)
@@ -70,7 +81,7 @@ public final class TCPConnection: @unchecked Sendable {
 /// channel source tells you about. This includes things like `channelRead` ("there is some data to read"), but it also includes things like
 /// `channelWritabilityChanged` ("this source is no longer marked writable").
 ///
-private final class ConnectionInboundHandler: @unchecked Sendable, ChannelInboundHandler {
+final class ConnectionInboundHandler: @unchecked Sendable, ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
     
     var onRead: (ByteBuffer) -> Void
