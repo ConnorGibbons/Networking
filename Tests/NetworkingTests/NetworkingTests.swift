@@ -2,11 +2,28 @@ import XCTest
 @testable import Networking
 
 final class NetworkingTests: XCTestCase {
-    func testExample() throws {
-        // XCTest Documentation
-        // https://developer.apple.com/documentation/xctest
-
-        // Defining Test Cases and Test Methods
-        // https://developer.apple.com/documentation/xctest/defining_test_cases_and_test_methods
+    
+    /// Simple test to see if TCPConnection successfully opens connections.
+    /// Relies on Cloudflare & Google being up & reachable.
+    func testTCPConnect() async throws {
+        _ = try await TCPConnection(onRead: printRead, host: "1.1.1.1", port: 53, debug: true)
+        _ = try await TCPConnection(onRead: printRead, host: "google.com", port: 443, debug: true)
     }
+    
+    func testTCPConnectSend() async throws {
+        let tcpBinConnection = try await TCPConnection(onRead: printRead, host: "tcpbin.com", port: 4242, debug: true)
+        try await tcpBinConnection.sendLine("Hi!")
+        delay(by: 1)
+    }
+    
+    
+}
+
+
+func printRead(_ data: Data) {
+    print("Received \(data.count) bytes: " + String(data: data, encoding: .ascii)!)
+}
+
+func delay(by: TimeInterval) {
+    usleep(useconds_t(by * 1_000_000))
 }
