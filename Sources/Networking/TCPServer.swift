@@ -89,6 +89,41 @@ final class TCPServer: @unchecked Sendable {
             .wait()
     }
     
+    public init(port: UInt16, maxConnections: UInt, actionOnNewConnection: @Sendable @escaping (TCPConnection) -> Void, actionOnReceive: @Sendable @escaping (String, Data) -> Void, debug: Bool = false) async throws {
+        self.port = port
+        self.maxConnections = maxConnections
+        let connections = ConnectionList.init()
+        self.connections = connections
+        self.server = try await ServerBootstrap(group: globalManager.group)
+            .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            .childChannelInitializer { channel in
+                let connectionName = channel.remoteAddress.map { "\($0)" } ?? "Unknown"
+                
+                let handler = ConnectionInboundHandler(
+                    onRead: TCPServer.generateCallback(actionOnReceive, connectionName: connectionName),
+                    onActive: {
+                        if(connections.connectionCount() >= maxConnections) {
+                            print("Failed to create new server connection, max connections reached (\(maxConnections))")
+                            channel.close(promise: nil)
+                            return
+                        }
+                        let newConnection = TCPConnection(channel: channel, connectionName: connectionName)
+                        connections.addConnection(connection: newConnection)
+                        actionOnNewConnection(newConnection)
+                    },
+                    onInactive: {
+                        connections.removeConnection(id: connectionName)
+                    }
+                )
+                if(debug) {
+                    return channel.pipeline.addHandlers([DebugInboundHandler(), DebugOutboundHandler(), handler])
+                }
+                return channel.pipeline.addHandler(handler)
+            }
+            .bind(host: "0.0.0.0", port: Int(self.port))
+            .get()
+    }
+    
     public func send(connectionName: String, data: Data) async throws {
         guard let connection = connections.getConnection(id: connectionName) else {
             print("Connection: \(connectionName) doesn't exist, can't send data")
