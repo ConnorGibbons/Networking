@@ -15,15 +15,22 @@ final class NetworkingTests: XCTestCase {
         try await tcpBinConnection.sendLine("Hi!")
         delay(by: 1)
     }
-    
+
     func testTCPServer() async throws {
         let connectionName: Wrapped<String> = .init(value: "")
         let (stream, continuation) = AsyncStream.makeStream(of: String.self)
         let server = try TCPServer(port: 4242, maxConnections: 1, actionOnNewConnection: { connectionName.update(value: $0.connectionName) }, actionOnReceive: { _, data in
             continuation.yield(String(data: data, encoding: .ascii)!)
-        })
+        }) // The warning here is invalid, don't actually replace with '_', it'll deinit the object and fail the test
+        let newConnection = try await TCPConnection(onRead: {_ in }, host: "0.0.0.0", port: 4242)
+        for n in 0..<102 {
+            try await newConnection.sendLine("meow! \(n)")
+        }
+        var recCount = 0
         for await received in stream {
-            print("Received: \(received) from: \(connectionName.getValue())")
+            recCount += 1
+            print("Received: \(received) from: \(connectionName.getValue()), \(recCount)")
+            if(recCount >= 2) { break }
         }
     }
     
