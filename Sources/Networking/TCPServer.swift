@@ -44,6 +44,10 @@ private class ConnectionList: @unchecked Sendable {
     }
 }
 
+public enum TCPServerErrors: Error {
+    case connectionDoesNotExist
+}
+
 final class TCPServer: @unchecked Sendable {
     private let server: Channel
     private var connections: ConnectionList
@@ -88,9 +92,17 @@ final class TCPServer: @unchecked Sendable {
     public func send(connectionName: String, data: Data) async throws {
         guard let connection = connections.getConnection(id: connectionName) else {
             print("Connection: \(connectionName) doesn't exist, can't send data")
-            return
+            throw TCPServerErrors.connectionDoesNotExist
         }
         try await connection.send(data)
+    }
+    
+    public func send(connectionName: String, data: Data) throws {
+        guard let connection = connections.getConnection(id: connectionName) else {
+            print("Connection: \(connectionName) doesn't exist, can't send data")
+            throw TCPServerErrors.connectionDoesNotExist
+        }
+        try connection.send(data)
     }
     
    public func broadcast(data: Data) async {
@@ -104,16 +116,39 @@ final class TCPServer: @unchecked Sendable {
         }
     }
     
-    public func sendLine(connectionName: String, line: String) async throws {
-        let delimited = line + "\r\n"
+    public func broadcast(data: Data) {
+        for connection in self.connections.allConnections() {
+            do {
+                try connection.send(data)
+            }
+            catch {
+                print("Failed to send data to connection \(connection.connectionName): \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    public func sendLine(connectionName: String, line: String, delimiter: String = "\r\n") async throws {
+        let delimited = line + delimiter
         let data = Data(delimited.utf8)
         try await send(connectionName: connectionName, data: data)
     }
     
-    public func broadcastLine(line: String) async {
-        let delimited = line + "\r\n"
+    public func sendLine(connectionName: String, line: String, delimiter: String = "\r\n") throws {
+        let delimited = line + delimiter
+        let data = Data(delimited.utf8)
+        try send(connectionName: connectionName, data: data)
+    }
+    
+    public func broadcastLine(line: String, delimiter: String = "\r\n") async {
+        let delimited = line + delimiter
         let data = Data(delimited.utf8)
         await broadcast(data: data)
+    }
+    
+    public func broadcastLine(line: String, delimiter: String = "\r\n") {
+        let delimited = line + delimiter
+        let data = Data(delimited.utf8)
+        broadcast(data: data)
     }
     
     public func close() {
