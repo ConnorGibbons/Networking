@@ -20,7 +20,7 @@ public final class TCPConnection: @unchecked Sendable {
         let bootstrap = ClientBootstrap(group: globalManager.group)
         let handler = ConnectionInboundHandler(onRead: TCPConnection.generateCallback(onRead), onActive: onActive, onInactive: onInactive)
         
-        self.connectionName = "\(host):\(port)"
+        self.connectionName = TCPConnection.generateConnectionName(host: host, port: port)
         self.channel = try await bootstrap
             .channelInitializer { channel in
                 if(debug) {
@@ -31,6 +31,24 @@ public final class TCPConnection: @unchecked Sendable {
             .connect(host: host, port: port)
             .get()
     }
+    
+    public init(onRead: @Sendable @escaping (Data) -> Void, onActive: @Sendable @escaping () -> Void = {}, onInactive: @Sendable @escaping () -> Void = {}, host: String, port: Int, debug: Bool = false) throws {
+        let bootstrap = ClientBootstrap(group: globalManager.group)
+        let handler = ConnectionInboundHandler(onRead: TCPConnection.generateCallback(onRead), onActive: onActive, onInactive: onInactive)
+        
+        self.connectionName = TCPConnection.generateConnectionName(host: host, port: port)
+        self.channel = try bootstrap
+            .channelInitializer { channel in
+                if(debug) {
+                    return channel.pipeline.addHandlers([DebugInboundHandler(),DebugOutboundHandler(),handler])
+                }
+                return channel.pipeline.addHandler(handler)
+            }
+            .connect(host: host, port: port)
+            .wait()
+    }
+    
+    
     
     init(channel: Channel, connectionName: String) {
         self.channel = channel
@@ -45,14 +63,29 @@ public final class TCPConnection: @unchecked Sendable {
         }
     }
     
+    private static func generateConnectionName(host: String, port: Int) -> String {
+        return "\(host):\(port)"
+    }
+    
     public func send(_ data: Data) async throws {
         let dataAsByteBuffer = self.channel.allocator.buffer(bytes: data)
         try await self.channel.writeAndFlush(dataAsByteBuffer)
     }
     
+    /// Non-async overload for where it's not practical. Will block until writeAndFlush returns.
+    public func send(_ data: Data) throws {
+        let dataAsByteBuffer = self.channel.allocator.buffer(bytes: data)
+        try self.channel.writeAndFlush(dataAsByteBuffer).wait()
+    }
+    
     public func sendLine(_ text: String) async throws {
-        let textAsData =  Data((text + "\r\n").utf8)
+        let textAsData = Data((text + "\r\n").utf8)
         try await self.send(textAsData)
+    }
+    
+    public func sendLine(_ text: String) throws {
+        let textAsData = Data((text + "\r\n").utf8)
+        try self.send(textAsData)
     }
     
     public func close() async throws {
@@ -68,9 +101,7 @@ public final class TCPConnection: @unchecked Sendable {
     }
     
     deinit {
-        if(self.active) {
-            self.channel.close(promise: nil)
-        }
+        self.close()
     }
     
 }
