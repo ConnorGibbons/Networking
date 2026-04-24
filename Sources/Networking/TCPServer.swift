@@ -48,7 +48,7 @@ public enum TCPServerErrors: Error {
     case connectionDoesNotExist
 }
 
-final class TCPServer: @unchecked Sendable {
+public final class TCPServer: @unchecked Sendable {
     private let server: Channel
     private var connections: ConnectionList
     public let maxConnections: UInt
